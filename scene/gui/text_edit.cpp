@@ -935,7 +935,7 @@ void TextEdit::_notification(int p_what) {
 				int minimap_line = (v_scroll->get_max() <= minimap_visible_lines) ? -1 : first_visible_line;
 				if (minimap_line >= 0) {
 					minimap_line -= num_lines_from_rows(first_visible_line, 0, -num_lines_before, wi);
-					minimap_line -= (smooth_scroll_enabled ? 1 : 0);
+					minimap_line -= (minimap_line > 0 && smooth_scroll_enabled ? 1 : 0);
 				}
 				int minimap_draw_amount = minimap_visible_lines + times_line_wraps(minimap_line + 1);
 
@@ -2146,7 +2146,7 @@ void TextEdit::_get_minimap_mouse_row(const Point2i &p_mouse, int &r_row) const 
 	int minimap_line = (v_scroll->get_max() <= minimap_visible_lines) ? -1 : first_visible_line;
 	if (first_visible_line > 0 && minimap_line >= 0) {
 		minimap_line -= num_lines_from_rows(first_visible_line, 0, -num_lines_before, wi);
-		minimap_line -= (smooth_scroll_enabled ? 1 : 0);
+		minimap_line -= (minimap_line > 0 && smooth_scroll_enabled ? 1 : 0);
 	} else {
 		minimap_line = 0;
 	}
@@ -2843,19 +2843,30 @@ void TextEdit::_gui_input(const Ref<InputEvent> &p_gui_input) {
 
 				// No need to indent if we are going upwards.
 				if (auto_indent && !(k->get_command() && k->get_shift())) {
-					// Indent once again if previous line will end with ':' or '{' and the line is not a comment
+					// Indent once again if previous line will end with ':','{','[','(' and the line is not a comment
 					// (i.e. colon/brace precedes current cursor position).
-					if (cursor.column > 0 && (text[cursor.line][cursor.column - 1] == ':' || text[cursor.line][cursor.column - 1] == '{') && !is_line_comment(cursor.line)) {
-						if (indent_using_spaces) {
-							ins += space_indent;
-						} else {
-							ins += "\t";
-						}
+					if (cursor.column > 0) {
+						char prev_char = text[cursor.line][cursor.column - 1];
+						switch (prev_char) {
+							case ':':
+							case '{':
+							case '[':
+							case '(': {
+								if (!is_line_comment(cursor.line)) {
+									if (indent_using_spaces) {
+										ins += space_indent;
+									} else {
+										ins += "\t";
+									}
 
-						// No need to move the brace below if we are not taking the text with us.
-						if (text[cursor.line][cursor.column] == '}' && !k->get_command()) {
-							brace_indent = true;
-							ins += "\n" + ins.substr(1, ins.length() - 2);
+									// No need to move the brace below if we are not taking the text with us.
+									char closing_char = _get_right_pair_symbol(prev_char);
+									if ((closing_char != 0) && (closing_char == text[cursor.line][cursor.column]) && !k->get_command()) {
+										brace_indent = true;
+										ins += "\n" + ins.substr(1, ins.length() - 2);
+									}
+								}
+							} break;
 						}
 					}
 				}
