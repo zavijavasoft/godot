@@ -1723,7 +1723,9 @@ void TextEdit::_notification(int p_what) {
 						end = font->get_string_size(l.substr(0, l.rfind(String::chr(0xFFFF)))).x;
 					}
 
-					draw_string(font, hint_ofs + sb->get_offset() + Vector2(0, font->get_ascent() + font->get_height() * i + spacing), l.replace(String::chr(0xFFFF), ""), font_color);
+					Point2 round_ofs = hint_ofs + sb->get_offset() + Vector2(0, font->get_ascent() + font->get_height() * i + spacing);
+					round_ofs = round_ofs.round();
+					draw_string(font, round_ofs, l.replace(String::chr(0xFFFF), ""), font_color);
 					if (end > 0) {
 						Vector2 b = hint_ofs + sb->get_offset() + Vector2(begin, font->get_height() + font->get_height() * i + spacing - 1);
 						draw_line(b, b + Vector2(end - begin, 0), font_color);
@@ -4762,6 +4764,9 @@ void TextEdit::set_text(String p_text) {
 		selection.active = false;
 	}
 
+	cursor_set_line(0);
+	cursor_set_column(0);
+
 	update();
 	setting_text = false;
 };
@@ -5063,15 +5068,18 @@ Map<int, TextEdit::Text::ColorRegionInfo> TextEdit::_get_line_color_region_info(
 void TextEdit::clear_colors() {
 
 	keywords.clear();
+	member_keywords.clear();
 	color_regions.clear();
 	color_region_cache.clear();
 	syntax_highlighting_cache.clear();
 	text.clear_width_cache();
+	update();
 }
 
 void TextEdit::add_keyword_color(const String &p_keyword, const Color &p_color) {
 
 	keywords[p_keyword] = p_color;
+	syntax_highlighting_cache.clear();
 	update();
 }
 
@@ -5088,12 +5096,14 @@ Color TextEdit::get_keyword_color(String p_keyword) const {
 void TextEdit::add_color_region(const String &p_begin_key, const String &p_end_key, const Color &p_color, bool p_line_only) {
 
 	color_regions.push_back(ColorRegion(p_begin_key, p_end_key, p_color, p_line_only));
+	syntax_highlighting_cache.clear();
 	text.clear_width_cache();
 	update();
 }
 
 void TextEdit::add_member_keyword(const String &p_keyword, const Color &p_color) {
 	member_keywords[p_keyword] = p_color;
+	syntax_highlighting_cache.clear();
 	update();
 }
 
@@ -5107,6 +5117,7 @@ Color TextEdit::get_member_color(String p_member) const {
 
 void TextEdit::clear_member_keywords() {
 	member_keywords.clear();
+	syntax_highlighting_cache.clear();
 	update();
 }
 
@@ -6031,6 +6042,7 @@ void TextEdit::undo() {
 		}
 	}
 
+	_update_scrollbars();
 	if (undo_stack_pos->get().type == TextOperation::TYPE_REMOVE) {
 		cursor_set_line(undo_stack_pos->get().to_line);
 		cursor_set_column(undo_stack_pos->get().to_column);
@@ -6066,6 +6078,8 @@ void TextEdit::redo() {
 				break;
 		}
 	}
+
+	_update_scrollbars();
 	cursor_set_line(undo_stack_pos->get().to_line);
 	cursor_set_column(undo_stack_pos->get().to_column);
 	undo_stack_pos = undo_stack_pos->next();
