@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -34,13 +34,22 @@
 #ifndef PARTICLES_MATERIAL_H
 #define PARTICLES_MATERIAL_H
 
-class ParticlesMaterial : public Material {
+/*
+ TODO:
+-Path following
+*Manual emission
+-Sub Emitters
+-Attractors
+-Emitter positions deformable by bones
+-Collision
+-Proper trails
+*/
 
+class ParticlesMaterial : public Material {
 	GDCLASS(ParticlesMaterial, Material);
 
 public:
 	enum Parameter {
-
 		PARAM_INITIAL_LINEAR_VELOCITY,
 		PARAM_ANGULAR_VELOCITY,
 		PARAM_ORBIT_VELOCITY,
@@ -69,20 +78,27 @@ public:
 		EMISSION_SHAPE_BOX,
 		EMISSION_SHAPE_POINTS,
 		EMISSION_SHAPE_DIRECTED_POINTS,
+		EMISSION_SHAPE_MAX
+	};
+
+	enum SubEmitterMode {
+		SUB_EMITTER_DISABLED,
+		SUB_EMITTER_CONSTANT,
+		SUB_EMITTER_AT_END,
+		SUB_EMITTER_AT_COLLISION,
+		SUB_EMITTER_MAX
 	};
 
 private:
 	union MaterialKey {
-
 		struct {
 			uint32_t texture_mask : 16;
 			uint32_t texture_color : 1;
 			uint32_t flags : 4;
 			uint32_t emission_shape : 2;
-			uint32_t trail_size_texture : 1;
-			uint32_t trail_color_texture : 1;
 			uint32_t invalid_key : 1;
 			uint32_t has_emission_color : 1;
+			uint32_t sub_emitter : 2;
 		};
 
 		uint32_t key;
@@ -102,7 +118,6 @@ private:
 	MaterialKey current_key;
 
 	_FORCE_INLINE_ MaterialKey _compute_key() const {
-
 		MaterialKey mk;
 		mk.key = 0;
 		for (int i = 0; i < PARAM_MAX; i++) {
@@ -118,14 +133,13 @@ private:
 
 		mk.texture_color = color_ramp.is_valid() ? 1 : 0;
 		mk.emission_shape = emission_shape;
-		mk.trail_color_texture = trail_color_modifier.is_valid() ? 1 : 0;
-		mk.trail_size_texture = trail_size_modifier.is_valid() ? 1 : 0;
 		mk.has_emission_color = emission_shape >= EMISSION_SHAPE_POINTS && emission_color_texture.is_valid();
+		mk.sub_emitter = sub_emitter_mode;
 
 		return mk;
 	}
 
-	static Mutex *material_mutex;
+	static Mutex material_mutex;
 	static SelfList<ParticlesMaterial>::List *dirty_materials;
 
 	struct ShaderNames {
@@ -180,13 +194,13 @@ private:
 		StringName emission_texture_normal;
 		StringName emission_texture_color;
 
-		StringName trail_divisor;
-		StringName trail_size_modifier;
-		StringName trail_color_modifier;
-
 		StringName gravity;
 
 		StringName lifetime_randomness;
+
+		StringName sub_emitter_frequency;
+		StringName sub_emitter_amount_at_end;
+		StringName sub_emitter_keep_velocity;
 	};
 
 	static ShaderNames *shader_names;
@@ -204,36 +218,35 @@ private:
 	float parameters[PARAM_MAX];
 	float randomness[PARAM_MAX];
 
-	Ref<Texture> tex_parameters[PARAM_MAX];
+	Ref<Texture2D> tex_parameters[PARAM_MAX];
 	Color color;
-	Ref<Texture> color_ramp;
+	Ref<Texture2D> color_ramp;
 
 	bool flags[FLAG_MAX];
 
 	EmissionShape emission_shape;
 	float emission_sphere_radius;
 	Vector3 emission_box_extents;
-	Ref<Texture> emission_point_texture;
-	Ref<Texture> emission_normal_texture;
-	Ref<Texture> emission_color_texture;
+	Ref<Texture2D> emission_point_texture;
+	Ref<Texture2D> emission_normal_texture;
+	Ref<Texture2D> emission_color_texture;
 	int emission_point_count;
 
 	bool anim_loop;
-
-	int trail_divisor;
-
-	Ref<CurveTexture> trail_size_modifier;
-	Ref<GradientTexture> trail_color_modifier;
 
 	Vector3 gravity;
 
 	float lifetime_randomness;
 
+	SubEmitterMode sub_emitter_mode;
+	float sub_emitter_frequency;
+	int sub_emitter_amount_at_end;
+	bool sub_emitter_keep_velocity;
 	//do not save emission points here
 
 protected:
 	static void _bind_methods();
-	virtual void _validate_property(PropertyInfo &property) const;
+	virtual void _validate_property(PropertyInfo &property) const override;
 
 public:
 	void set_direction(Vector3 p_direction);
@@ -251,14 +264,14 @@ public:
 	void set_param_randomness(Parameter p_param, float p_value);
 	float get_param_randomness(Parameter p_param) const;
 
-	void set_param_texture(Parameter p_param, const Ref<Texture> &p_texture);
-	Ref<Texture> get_param_texture(Parameter p_param) const;
+	void set_param_texture(Parameter p_param, const Ref<Texture2D> &p_texture);
+	Ref<Texture2D> get_param_texture(Parameter p_param) const;
 
 	void set_color(const Color &p_color);
 	Color get_color() const;
 
-	void set_color_ramp(const Ref<Texture> &p_texture);
-	Ref<Texture> get_color_ramp() const;
+	void set_color_ramp(const Ref<Texture2D> &p_texture);
+	Ref<Texture2D> get_color_ramp() const;
 
 	void set_flag(Flags p_flag, bool p_enable);
 	bool get_flag(Flags p_flag) const;
@@ -266,27 +279,18 @@ public:
 	void set_emission_shape(EmissionShape p_shape);
 	void set_emission_sphere_radius(float p_radius);
 	void set_emission_box_extents(Vector3 p_extents);
-	void set_emission_point_texture(const Ref<Texture> &p_points);
-	void set_emission_normal_texture(const Ref<Texture> &p_normals);
-	void set_emission_color_texture(const Ref<Texture> &p_colors);
+	void set_emission_point_texture(const Ref<Texture2D> &p_points);
+	void set_emission_normal_texture(const Ref<Texture2D> &p_normals);
+	void set_emission_color_texture(const Ref<Texture2D> &p_colors);
 	void set_emission_point_count(int p_count);
 
 	EmissionShape get_emission_shape() const;
 	float get_emission_sphere_radius() const;
 	Vector3 get_emission_box_extents() const;
-	Ref<Texture> get_emission_point_texture() const;
-	Ref<Texture> get_emission_normal_texture() const;
-	Ref<Texture> get_emission_color_texture() const;
+	Ref<Texture2D> get_emission_point_texture() const;
+	Ref<Texture2D> get_emission_normal_texture() const;
+	Ref<Texture2D> get_emission_color_texture() const;
 	int get_emission_point_count() const;
-
-	void set_trail_divisor(int p_divisor);
-	int get_trail_divisor() const;
-
-	void set_trail_size_modifier(const Ref<CurveTexture> &p_trail_size_modifier);
-	Ref<CurveTexture> get_trail_size_modifier() const;
-
-	void set_trail_color_modifier(const Ref<GradientTexture> &p_trail_color_modifier);
-	Ref<GradientTexture> get_trail_color_modifier() const;
 
 	void set_gravity(const Vector3 &p_gravity);
 	Vector3 get_gravity() const;
@@ -298,9 +302,21 @@ public:
 	static void finish_shaders();
 	static void flush_changes();
 
+	void set_sub_emitter_mode(SubEmitterMode p_sub_emitter_mode);
+	SubEmitterMode get_sub_emitter_mode() const;
+
+	void set_sub_emitter_frequency(float p_frequency);
+	float get_sub_emitter_frequency() const;
+
+	void set_sub_emitter_amount_at_end(int p_amount);
+	int get_sub_emitter_amount_at_end() const;
+
+	void set_sub_emitter_keep_velocity(bool p_enable);
+	bool get_sub_emitter_keep_velocity() const;
+
 	RID get_shader_rid() const;
 
-	virtual Shader::Mode get_shader_mode() const;
+	virtual Shader::Mode get_shader_mode() const override;
 
 	ParticlesMaterial();
 	~ParticlesMaterial();
@@ -309,5 +325,6 @@ public:
 VARIANT_ENUM_CAST(ParticlesMaterial::Parameter)
 VARIANT_ENUM_CAST(ParticlesMaterial::Flags)
 VARIANT_ENUM_CAST(ParticlesMaterial::EmissionShape)
+VARIANT_ENUM_CAST(ParticlesMaterial::SubEmitterMode)
 
 #endif // PARTICLES_MATERIAL_H
